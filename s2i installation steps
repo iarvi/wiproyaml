@@ -1,0 +1,10 @@
+20  mkdir /tmp/s2i/ && cd /tmp/s2i/
+  121  curl -s https://api.github.com/repos/openshift/source-to-image/releases/latest
+  122  tar xvf source-to-image*.gz
+  123  ls
+  124  curl -s https://api.github.com/repos/openshift/source-to-image/releases/latest   | grep browser_download_url   | grep linux-amd64   | cut -d '"' -f 4   | wget -qi -
+  125  tar xvf source-to-image*.gz
+  126  sudo mv s2i /usr/local/bin
+  127  rm -rf /tmp/s2i/
+  128  which s2i
+  129  s2i --help
