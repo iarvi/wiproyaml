@@ -1,0 +1,52 @@
+kind: "DeploymentConfig" #to do the deployment which APi need to be used
+apiVersion: "v1"
+metadata:
+  name: "frontend"
+  # i am putting information for Deployment
+spec:
+  template:
+    metadata:
+      labels:
+        name: "frontend"
+    spec:
+      containers:
+        - name: "hello world"
+        image: "openshift/origin-ruby-sample"
+        ports:
+          - containerPort: 8080
+            protocol: "TCP"
+            # the pod template of your frontend deployment configuration describe a simple ruby app
+replicas: 5 # i am running 5 replica of my application
+triggers: # whenever a configuration change happen a new replication controlled to be created also the pod template shoudl change
+  - type: "ConfigChange"
+  - type: "ImageChange" # an image change trieeg caused a new replication controll each time you provide a new version of your image
+    imageChangeParams:
+      automatic: true
+      containerNames:
+        - "hello World"
+      from:
+        kind: "ImageStreamTag"
+        name: "origin-ruby-sample:latest"
+  strategy:
+    type: "Rolling"
+    rollingParams:
+      timeoutSecond: 300 # how long you are wating for a event before giving up 
+      maxSurge: 25%
+      maxUnavailable: 25%
+      pre:
+        failurePolicy: Abort
+        execNewPod:
+      post:
+        failurePolicy: Retry
+      #abort : the deployment sould be considered a failure if the hook fails
+      #retry: the hook execution should be retired unti it succeeds
+      #ignore: any hook failure should be ignored and the deployment should proceed
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "256Mi"
+        #  it is the default way of rolling
+
+  paused: false # it will pause your deployment config it will disable your trigger so that you can change the teplate
+  revisionHistoryLimit: 2 #it is limit of odl replication controlle you want kepp around so that you can easily rollback
+  minReadySecond: 30 # once readyness check success for the pod to be considered avaialbe
