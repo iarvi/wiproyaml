@@ -1,0 +1,2 @@
+# wiproyaml
+Openshift examples
