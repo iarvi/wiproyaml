@@ -1,0 +1,30 @@
+227  oc new-project myproject
+  228  oc new-project mysqlproject
+  229  oc new-app -e MYSQL_USER=admin -e MYSQL_PASSWORD=test -e MYSQL_DATABASE registry.access.redhat.com/openshift3/mysql-55-rhel7
+  230  oc new-app -e MYSQL_USER=admin -e MYSQL_PASSWORD=test -e MYSQL_DATABASE=testdb registry.access.redhat.com/openshift3/mysql-55-rhel7
+  231  oc get svc
+  232  oc expose service mysql-55-rhel7 route "mysql-55-rhel7" exposed
+  233  oc expose service mysql-55-rhel7
+  234  curl 172.30.88.124:3306
+  235  mysql -h 172.30.88.124 -u admin -p
+  236  yum install mysql
+  237  mysql -h 172.30.88.124 -u admin -p
+  238  vi mysql-lb.yaml
+  239  oc create -f mysql-lb.yaml 
+  240  oc get svc
+  241  history
+[root@localhost 
+
+loadbalancer.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: egress-2
+spec:
+  ports:
+   - name : db
+     port: 3306
+  loadBalncerIP:
+  type: LoadBalancer
+  selector:
+    name: mysql

@@ -1,0 +1,342 @@
+[mike@zeus ~]$ sudo oc cluster up –host-data-dir /home/mike/ocp-data-dir/ –host-config-dir /home/mike/ocp-config-dir/
+Starting OpenShift using registry.access.redhat.com/openshift3/ose:v3.7.9 …
+Pulling image registry.access.redhat.com/openshift3/ose:v3.7.9
+Pulled 1/4 layers, 27% complete
+Pulled 1/4 layers, 57% complete
+Pulled 2/4 layers, 76% complete
+Pulled 3/4 layers, 82% complete
+Pulled 3/4 layers, 91% complete
+Pulled 4/4 layers, 100% complete
+Extracting
+Image pull complete
+OpenShift server started.
+
+The server is accessible via web console at:
+https://127.0.0.1:8443
+
+You are logged in as:
+User: developer
+Password: <any value>
+
+To log in as administrator:
+oc login -u system: admin
+
+Let’s log into the CLI or UI using a new account (don’t worry about user/password settings because the oc cluster up is open so when you try to log in, a new user/password will be automatically created).
+
+
+
+Now after you have taken some time to look up the documentation, you know that several factors are combined to make the decision when OpenShift Container Platform evaluates authorizations.
+
+In details, it evaluates the identity (who), the actions (what), and the binding (how roles are applied to users).
+
+Identity
+
+In the context of authorization, both the username and list of groups the user belongs to.
+
+Action
+
+The action being performed. In most cases, this consists of:
+
+Project	The project being accessed.
+Verb	Can be get, list, create, update, delete, deletecollection or watch.
+Resource Name	The API endpoint being accessed.
+Bindings
+
+The full list of bindings.
+
+A standard user on OpenShift is a member of 3 groups by default:
+
+system:authenticated
+This is assigned to all users who are identifiable to the API. Everyone who is not system:anonymous(the user) is in this group.
+
+system:authenticated:oauth
+This is assigned to all users who have been identified using an oauth token issued by the embedded oauth server. This is not applied to service accounts (they use service account tokens), or certificate users.
+
+system:unauthenticated
+This is assigned to users who have not presented credentials. Invalid credentials are rejected with a 401 error, so this is specifically users who did not try to authenticate at all.
+
+Let’s see what roles are applied to our users/groups looking at the default clusterolebinding for the group system:authenticated.
+
+[mike@zeus ~]$oc describe clusterrolebinding | grep -B2 system:auth | awk {‘print $1 $2’} | grep Role | sed ‘s/Role://g’
+/basic-user
+/cluster-status
+/self-access-reviewer
+/self-provisioner
+/system:basic-user
+/system:build-strategy-docker
+/system:build-strategy-jenkinspipeline
+/system:build-strategy-source
+/system:discovery
+/system:discovery
+/system:oauth-token-deleter
+/system:scope-impersonation
+/system:webhook
+
+Now we would like to know what permissions are granted to these roles within our OpenShift cluster.
+
+For instance our basic-user is able to list user and project (first two rows).
+
+[mike@zeus ~]$ oc describe clusterrole basic-user
+Name: basic-user
+Created: About an hour ago
+Labels: <none>
+Annotations: openshift.io/description=A user that can get basic information about projects.
+openshift.io/reconcile-protect=false
+Verbs Non-Resource URLs Resource Names API Groups Resources
+[get] [] [~] [ user.openshift.io] [users]
+[list] [] [] [ project.openshift.io] [projectrequests]
+[get list] [] [] [ authorization.openshift.io] [clusterroles]
+[get list watch] [] [] [rbac.authorization.k8s.io] [clusterroles]
+[get list] [] [] [storage.k8s.io] [storageclasses]
+[list watch] [] [] [ project.openshift.io] [projects]
+[create] [] [] [ authorization.openshift.io] [selfsubjectrulesreviews]
+[create] [] [] [authorization.k8s.io] [selfsubjectaccessreviews]
+
+Checking every cluster role listed previously you’ll probably notice that pod creation is not available so the question here is:
+
+How am I able to create pods inside my project without having this right?
+
+Well, the answer is pretty simple; let’s create a project and check our permission.
+
+[mike@zeus ~]$ oc login -u michele
+Logged into “https://127.0.0.1:8443” as “michele” using existing credentials.
+
+If you don’t have any projects, you can try to create a new project, by running;
+
+oc new-project <projectname>
+
+[mike@zeus ~]$ oc new-project mike-rbac
+
+Now using project “mike-rbac” on server “https://127.0.0.1:8443”.
+
+You can add applications to this project with the ‘new-app’ command.
+
+For example, try:
+
+oc new-app centos/ruby-22-centos7~https://github.com/openshift/ruby-ex.git
+
+to build a new example application in Ruby.
+
+[mike@zeus ~]$ oc get rolebinding
+NAME ROLE USERS GROUPS SERVICE ACCOUNTS SUBJECTS
+admin /admin michele
+system:deployers /system:deployer deployer
+system:image-builders /system:image-builder builder
+system:image-pullers /system:image-puller system:serviceaccounts:mike-rbac
+
+As you can see now our user Michele is an admin of its own project and Admin is able to create a pod.
+
+We can check it with the description of the RoleBinding or with the export of the ClusterRole admin.
+
+[mike@zeus ~]$ oc describe rolebinding admin
+Name: admin
+Namespace: mike-rbac
+Created: About a minute ago
+Labels: <none>
+Annotations: <none>
+Role: /admin
+Users: michele
+Groups: <none>
+ServiceAccounts: <none>
+Subjects: <none>
+Verbs Non-Resource URLs Resource Names API Groups Resources
+[create delete deletecollection get list patch update watch] [] [] [] [pods pods/attach pods/exec pods/portforward pods/proxy]
+
+output truncated
+
+[mike@zeus ~]$ oc export clusterrole admin |more
+apiVersion: v1
+kind: ClusterRole
+metadata:
+annotations:
+openshift.io/description: A user that has edit rights within the project and can
+change the project’s membership.
+openshift.io/reconcile-protect: “false”
+creationTimestamp: null
+name: admin
+rules:
+– apiGroups:
+– “”
+attributeRestrictions: null
+resources:
+– pods
+– pods/attach
+– pods/exec
+– pods/portforward
+– pods/proxy
+verbs:
+– create
+– delete
+– deletecollection
+– get
+– list
+– patch
+– update
+– watch
+
+output truncated
+
+[mike@zeus ~]$ oc whoami
+michele
+[mike@zeus ~]$ oc policy can-i create pod
+yes
+
+Now that we understand how permissions are working out of the box, let’s restrict what our user can do with two examples:
+
+Assign an existing role with restricted permissions to our user avoiding pod creation.
+Create a custom role denying rsh/console access to pods.
+1. Assign an existing role with restricted permission to our user avoiding pod creation.
+Let’s assign the view role to our user.
+
+as system:admin
+
+[mike@zeus ~]$ oc adm policy add-role-to-user view michele
+role “view” added: “michele”
+
+Now let’s remove the admin role.
+
+mike@zeus ~]$ oc adm policy remove-role-from-user admin michele
+role “admin” removed: “michele”
+
+as michele
+
+[mike@zeus ~]$ oc login -u michele
+
+Let’s see if we can again create a pod (the expected result is an error).
+
+[mike@zeus ~]$ oc new-app php
+–> Found image d43fea2 (3 weeks old) in image stream “openshift/php” under tag “7.0” for “php”
+
+Apache 2.4 with PHP 7.0
+———————–
+PHP 7.0 is available as a Docker container is a base platform for building and running various PHP 7.0 applications and frameworks. PHP is an HTML-embedded scripting language. PHP attempts to make it easy for developers to write dynamically generated web pages. PHP also offers built-in database integration for several commercial and non-commercial database management systems, so writing a database-enabled webpage with PHP is fairly simple. The most common use of PHP coding is probably as a replacement for CGI scripts.
+
+Tags: builder, php, php70, rh-php70
+
+* This image will be deployed in deployment config “php”.
+* Port 8080/tcp will be load balanced by service “php”.
+* Other containers can access this service through the hostname “php”.
+
+–> Creating resources …
+error: User “michele” cannot create deploymentconfigs.apps.openshift.io in the namespace “mike-rbac”: User “michele” cannot create deploymentconfigs.apps.openshift.io in project “mike-rbac” (post deploymentconfigs.apps.openshift.io)
+error: User “michele” cannot create services in the namespace “mike-rbac”: User “michele” cannot create services in project “mike-rbac” (post services)
+–> Failed
+
+As you can see I was not able to create pods inside my project with the view role assigned.
+
+2. Create a custom role denying rsh/console access to pods.
+
+We can create a custom role from scratch but basically, it’s better to start from an existing role customizing it accordingly to our needs.
+
+Let’s use as a baseline the edit role will export it to a yaml file.
+
+as system:admin
+
+[mike@zeus ~]$ oc login -u system:admin
+Logged into “https://127.0.0.1:8443” as “system:admin” using existing credentials.
+
+You have access to the following projects and can switch between them with ‘oc project <projectname>’:
+
+default
+kube-public
+kube-system
+* mike-rbac
+myproject
+openshift
+openshift-infra
+openshift-node
+
+Using project “mike-rbac”.
+
+[mike@zeus ~]$ oc export clusterrole edit > custom-edit-user.yaml
+
+We have to now edit the file, changing the field name and deleting the row – pods/exec used by the console access.
+
+Now we have to create the new role and assign it to our user.
+
+mike@zeus ~]$ oc create -f custom-edit-user.yaml
+clusterrole “edit-custom” created
+
+[mike@zeus ~]$ oc policy add-role-to-user edit-custom michele
+role “edit-custom” added: “michele”
+[mike@zeus ~]$ oc policy remove-role-from-user admin michele
+role “admin” removed: “michele”
+
+Now we expect to be able to import our image stream from the Red Hat registry and build our new app.
+
+as michele
+
+[mike@zeus ~]$ oc login -u michele
+Logged into “https://127.0.0.1:8443” as “michele” using existing credentials.
+
+You have one project on this server: “mike-rbac”
+
+Using project “mike-rbac”.
+
+Let’s import a new image stream to be used later for our pod.
+
+oc import-image my-rhscl/mariadb-102-rhel7 –from=registry.access.redhat.com/rhscl/mariadb-102-rhel7 –confirm
+The import completed successfully.
+
+Name: mariadb-102-rhel7
+Namespace: mike-rbac
+Created: Less than a second ago
+Labels: <none>
+Annotations: openshift.io/image.dockerRepositoryCheck=2017-11-30T15:55:02Z
+Docker Pull Spec: 172.30.1.1:5000/mike-rbac/mariadb-102-rhel7
+Image Lookup: local=false
+Unique Images: 1
+Tags: 1
+
+output truncated
+
+Now we can start our Pod based on mariadb image stream.
+
+mike@zeus ~]$ oc new-app –image-stream=mariadb-102-rhel7 -e MYSQL_USER=mike -e MYSQL_PASSWORD=password -e MYSQL_DATABASE=michele
+–> Found image 9fa6498 (6 weeks old) in image stream “mike-rbac/mariadb-102-rhel7” under tag “latest” for “mariadb-102-rhel7”
+
+MariaDB 10.2
+————
+MariaDB is a multi-user, multi-threaded SQL database server. The container image provides a containerized packaging of the MariaDB mysqld daemon and client application. The mysqld server daemon accepts connections from clients and provides access to content from MariaDB databases on behalf of the clients.
+
+Tags: database, mysql, mariadb, mariadb102, rh-mariadb102
+
+* This image will be deployed in deployment config “mariadb-102-rhel7”.
+* Port 3306/tcp will be load balanced by service “mariadb-102-rhel7”.
+* Other containers can access this service through the hostname “mariadb-102-rhel7”.
+* This image declares volumes and will default to use non-persistent, host-local storage.
+You can add persistent volumes later by running ‘volume dc/mariadb-102-rhel7 –add …’
+
+–> Creating resources …
+deploymentconfig “mariadb-102-rhel7” created
+service “mariadb-102-rhel7” created
+–> Success
+The application is not exposed. You can expose services to the outside world by executing one or more of the commands below:
+‘oc expose svc/mariadb-102-rhel7’
+Run ‘oc status’ to view your app.
+
+Our pod is up and running.
+
+[mike@zeus ~]$ oc get pods
+NAME READY STATUS RESTARTS AGE
+mariadb-102-rhel7-1-fc2hx 1/1 Running 0 4m
+
+Let’s try now to log in to the console (the expected result is an error because we have restricted the permission deleting the exec verb for our pods).
+
+[mike@zeus ~]$ oc rsh mariadb-102-rhel7-1-fc2hx
+Error from server:
+
+Also from the UI you can see that our user is not able to connect to the pod’s console.
+
+
+
+If you want to understand what verbs are executed when you try some operations, remember that you can easily find them using the oc command line with the option –log-level=
+
+e.g.
+
+oc rsh –loglevel=8 mariadb-102-rhel7-1-fc2hx
+
+In the post call to the OCP api server, you can see that the command executed is the exec and this explains why we have deleted it from our custom role.
+
+POST https://127.0.0.1:8443/api/v1/namespaces/mike-rbac/pods/mariadb-102-rhel7-1-fc2hx/exec?command=%2Fbin%2Fsh&command=-c&command=TERM%3D%22xterm-256color%22+%2Fbin%2Fsh&container=mariadb-102-rhel7&container=mariadb-102-rhel7&stdin=true&stdout=true&tty=true
+
