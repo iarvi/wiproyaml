@@ -1,0 +1,24 @@
+157  git clone https://github.com/jorgemoralespou/ose-app-promotion-configmap
+  158  ls
+  159  cd ose-app-promotion-configmap/
+  160  ls
+  161  cd node-app/
+  162  ls
+  163  cd ..
+  164  cd example
+  165  cd example1
+  166  ls
+  167  vi ui.properties 
+  168  oc new-project configmap-example
+  169  oc create configmap config --from-literal=message='Hello World' --from-file=ui.properties
+  170  oc get configmap/config -o json
+  171  ls
+  172  vi node-app-deployment.json 
+  173  ls
+  174  oc create -f configmap-example.json 
+  175  oc create -f node-app-deployment.json 
+  176  vi node-app-deployment.json 
+  177  ls
+  178  oc create -f node-app-build.json 
+  179  vi node-app-build.json 
+  180  history
